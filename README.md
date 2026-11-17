@@ -18,13 +18,14 @@ Auto-post Threads mengikut jadual `posts.csv`. GitHub Actions jalan setiap 30 mi
 | type | `video` atau `gambar` |
 | media_urls | URL media (catbox), pisah dengan `;` |
 | caption | teks post utama, tanpa pautan |
-| status | `pending`, `done` atau `error` |
+| status | `pending`, `balas` (post terbit, reply belum), `done` atau `error` |
 | permalink | pautan post selepas terbit |
 | error | mesej ralat jika gagal |
 | topic_tag | tag topik (pilihan) |
 | reply_text | reply kepada post utama, biasanya pautan produk |
 | reply_media | media untuk reply (pilihan) |
 | ref | rujukan dalaman (pilihan) |
+| post_id | ID post Threads, diisi robot selepas terbit |
 
 ## Secret (Settings > Secrets and variables > Actions)
 

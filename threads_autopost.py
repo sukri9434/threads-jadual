@@ -27,7 +27,7 @@ GRAPH = "https://graph.threads.net/v1.0"
 ZON = ZoneInfo("Asia/Kuala_Lumpur")
 FAIL_CSV = Path(__file__).with_name("posts.csv")
 LAJUR = ["id", "platform", "scheduled_at", "type", "media_urls", "caption", "status", "permalink",
-         "error", "topic_tag", "reply_text", "reply_media", "ref"]
+         "error", "topic_tag", "reply_text", "reply_media", "ref", "post_id"]
 
 
 def tg(teks: str) -> None:
@@ -98,6 +98,32 @@ def permalink(media_id: str) -> str:
         return ""
 
 
+def cari_id(pl: str) -> str:
+    """Cari ID media berdasarkan permalink dalam post terbaharu akaun."""
+    j = _get("me/threads", "id,permalink")
+    for m in j.get("data", []):
+        if (m.get("permalink") or "").rstrip("/") == pl.rstrip("/"):
+            return m["id"]
+    return ""
+
+
+def balas(b: dict) -> None:
+    """Terbitkan reply (ulasan + link). Threads kadang-kadang belum sedia sebaik sahaja post terbit, jadi cuba beberapa kali."""
+    pid = (b.get("post_id") or "").strip() or cari_id(b.get("permalink", ""))
+    if not pid:
+        raise RuntimeError("ID post asal tak dijumpai untuk reply")
+    b["post_id"] = pid
+    ralat = None
+    for cuba in range(4):
+        time.sleep(15 if cuba == 0 else 30)
+        try:
+            terbit(b["reply_text"].strip(), (b.get("reply_media") or "").strip(), reply_kepada=pid)
+            return
+        except RuntimeError as e:
+            ralat = e
+    raise RuntimeError(f"reply gagal: {ralat}")
+
+
 def baca() -> tuple[list[str], list[dict]]:
     with FAIL_CSV.open(newline="", encoding="utf-8") as f:
         pembaca = csv.DictReader(f)
@@ -123,24 +149,34 @@ def sudah_tiba(masa: str, sekarang: datetime) -> bool:
 
 def jalankan() -> int:
     lajur, baris = baca()
+    if "post_id" not in lajur:
+        lajur.append("post_id")
     sekarang = datetime.now(ZON)
     diterbitkan = gagal = 0
     for b in baris:
-        if b.get("status") != "pending" or not sudah_tiba(b.get("scheduled_at", ""), sekarang):
-            continue
+        status = b.get("status")
         try:
-            media = (b.get("media_urls") or "").split(";")[0].strip()
-            pid = terbit(b["caption"], media)
-            b["permalink"] = permalink(pid)
-            if (b.get("reply_text") or "").strip():
-                terbit(b["reply_text"].strip(), (b.get("reply_media") or "").strip(), reply_kepada=pid)
-            b["status"], b["error"] = "done", ""
-            diterbitkan += 1
+            if status == "pending" and sudah_tiba(b.get("scheduled_at", ""), sekarang):
+                media = (b.get("media_urls") or "").split(";")[0].strip()
+                pid = terbit(b["caption"], media)
+                b["post_id"], b["permalink"] = pid, permalink(pid)
+                diterbitkan += 1
+                b["status"] = "balas" if (b.get("reply_text") or "").strip() else "done"
+                b["error"] = ""
+                tulis(lajur, baris)  # simpan dulu: post utama sudah terbit
+                tg(f"Threads {b.get('id')}: post terbit {b['permalink']}")
+                status = b["status"]
+            if status == "balas":
+                balas(b)
+                b["status"], b["error"] = "done", ""
+                tg(f"Threads {b.get('id')}: reply terbit")
         except (RuntimeError, requests.RequestException, KeyError) as ralat:
-            b["status"], b["error"] = "error", str(ralat)[:300]
+            # kalau post utama sudah terbit, kekalkan status "balas" supaya reply diulang; kalau belum, tanda error
+            b["status"] = "balas" if b.get("post_id") else "error"
+            b["error"] = str(ralat)[:300]
             gagal += 1
+            tg(f"Threads {b.get('id')}: {b['status']} {b['error']}")
         tulis(lajur, baris)
-        tg(f"Threads {b.get('id')}: {b['status']} {b.get('error', '')}".strip())
     print(f"diterbitkan={diterbitkan} gagal={gagal}")
     return 0
 
