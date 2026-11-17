@@ -42,12 +42,21 @@ def tg(teks: str) -> None:
         pass
 
 
+def _ralat(j: dict, kod: int) -> str:
+    e = j.get("error", {}) if isinstance(j, dict) else {}
+    bahagian = [e.get("message") or f"HTTP {kod}"]
+    for k in ("code", "error_subcode", "error_user_msg", "type"):
+        if e.get(k):
+            bahagian.append(f"{k}={e[k]}")
+    return " | ".join(str(x) for x in bahagian)
+
+
 def _post(laluan: str, data: dict) -> dict:
     token = os.environ["THREADS_ACCESS_TOKEN"]
     r = requests.post(f"{GRAPH}/{laluan}", data={**data, "access_token": token}, timeout=60)
     j = r.json()
     if r.status_code >= 400 or "error" in j:
-        raise RuntimeError(j.get("error", {}).get("message") or f"HTTP {r.status_code}")
+        raise RuntimeError(_ralat(j, r.status_code) + f" [POST {laluan}]")
     return j
 
 
@@ -56,7 +65,7 @@ def _get(laluan: str, fields: str) -> dict:
     r = requests.get(f"{GRAPH}/{laluan}", params={"fields": fields, "access_token": token}, timeout=60)
     j = r.json()
     if r.status_code >= 400 or "error" in j:
-        raise RuntimeError(j.get("error", {}).get("message") or f"HTTP {r.status_code}")
+        raise RuntimeError(_ralat(j, r.status_code) + f" [GET {laluan}]")
     return j
 
 
@@ -114,7 +123,7 @@ def balas(b: dict) -> None:
         raise RuntimeError("ID post asal tak dijumpai untuk reply")
     b["post_id"] = pid
     ralat = None
-    for cuba in range(4):
+    for cuba in range(2):
         time.sleep(15 if cuba == 0 else 30)
         try:
             terbit(b["reply_text"].strip(), (b.get("reply_media") or "").strip(), reply_kepada=pid)
